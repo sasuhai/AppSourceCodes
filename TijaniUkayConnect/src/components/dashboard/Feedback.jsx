@@ -1,5 +1,4 @@
-
-    import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
     import { motion } from 'framer-motion';
     import { MessageSquare, Send, Image as ImageIcon, Loader2 } from 'lucide-react';
     import { Button } from '@/components/ui/button';
@@ -165,4 +164,3 @@
     };
 
     export default Feedback;
-  

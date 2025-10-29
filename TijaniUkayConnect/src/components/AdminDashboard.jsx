@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
     import { motion, AnimatePresence } from 'framer-motion';
     import { Users, Building, FileText, Bell, Camera, Video, Shield, LogOut, CheckCircle, XCircle, ArrowLeftRight, PlusCircle, Trash2, Edit, Upload, Link, CalendarDays, Phone, ArrowUpDown, QrCode, Menu, X, Search } from 'lucide-react';

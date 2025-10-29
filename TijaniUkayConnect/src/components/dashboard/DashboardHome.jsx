@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
     import { motion } from 'framer-motion';
     import { Bell, Calendar, ChevronRight, Loader2, Search } from 'lucide-react';

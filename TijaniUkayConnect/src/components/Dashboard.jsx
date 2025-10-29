@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
     import { motion, AnimatePresence } from 'framer-motion';
     import { Home, Bell, Calendar, FileText, Image, Video, User, LogOut, Menu, X, Contact, Shield, QrCode } from 'lucide-react';

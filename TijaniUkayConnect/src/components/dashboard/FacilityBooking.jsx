@@ -54,8 +54,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           .from('bookings')
           .select('*, facilities(name)')
           .eq('user_id', user.id)
-          .order('booking_date', { ascending: true })
-          .order('booking_time', { ascending: true });
+          .order('booking_date', { ascending: false })
+          .order('booking_time', { ascending: false });
 
         if (error) {
           toast({ title: 'Error fetching your bookings', description: error.message, variant: 'destructive' });
@@ -236,23 +236,23 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                 <Button variant="outline" size="icon" onClick={() => setCurrentDate(addDays(currentDate, 7))}><ChevronRight /></Button>
             </div>
             <div className="overflow-x-auto">
-                <div className="grid grid-cols-[auto_repeat(7,1fr)] min-w-[800px] md:min-w-0 text-xs sm:text-sm">
+                <div className="grid grid-cols-[auto_repeat(7,1fr)] min-w-[400px] md:min-w-0 text-xs sm:text-sm">
                     <div className="sticky left-0 bg-white z-10"></div>
                     {weekDates.map(date => (
                         <div key={date.toISOString()} className="text-center font-semibold p-2 border-b-2 border-gray-200">
-                            <div className="text-gray-500">{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                            <div>{date.getDate()}</div>
+                            <div className="text-gray-500 text-[10px] sm:text-xs">{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                            <div className="text-xs sm:text-sm">{date.getDate()}</div>
                         </div>
                     ))}
                     {timeSlots.map(time => (
                         <React.Fragment key={time}>
-                            <div className="p-2 text-right text-gray-500 border-r-2 border-gray-200 sticky left-0 bg-white z-10">{time}</div>
+                            <div className="p-2 text-right text-gray-500 border-r-2 border-gray-200 sticky left-0 bg-white z-10 text-[10px] sm:text-xs">{time}</div>
                             {weekDates.map(date => {
                                 const key = `${date.toISOString().split('T')[0]}_${time}`;
                                 const booking = calendarBookings.get(key);
                                 const isMyBooking = booking?.user_id === user.id;
                                 return (
-                                    <div key={date.toISOString()} className="border-b border-r border-gray-100 h-12">
+                                    <div key={date.toISOString()} className="border-b border-r border-gray-100 h-10 sm:h-12">
                                         <button 
                                             onClick={() => handleSlotClick(date, time)}
                                             className={`w-full h-full text-[10px] sm:text-xs text-center transition-colors ${
@@ -261,7 +261,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                                                 : 'bg-green-50 hover:bg-green-200'
                                             }`}
                                         >
-                                            {booking ? (isMyBooking ? 'My Booking' : 'Booked') : ''}
+                                            <span className="sm:hidden"></span>
+                                            <span className="hidden sm:inline">{booking ? (isMyBooking ? 'My Booking' : 'Booked') : ''}</span>
                                         </button>
                                     </div>
                                 );
@@ -270,25 +271,30 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                     ))}
                 </div>
             </div>
+            <div className="flex justify-center items-center gap-4 mt-4 text-xs text-gray-600">
+                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-50"></div><span>Available</span></div>
+                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500"></div><span>My Booking</span></div>
+                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"></div><span>Booked</span></div>
+            </div>
           </div>
 
           <div>
             <h3 className="text-2xl font-bold text-gray-800 mb-4 mt-8">My Upcoming Bookings</h3>
             {bookings.length > 0 ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                     {bookings.map((booking) => (
-                    <motion.div key={booking.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl shadow-lg p-6 flex flex-col">
+                    <motion.div key={booking.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl shadow-lg p-4 flex flex-col">
                         <div className="flex-grow">
-                            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 mb-4 flex items-center justify-center">
-                                <MapPin className="w-12 h-12 text-white" />
+                            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-3 mb-3 flex items-center justify-center">
+                                <MapPin className="w-10 h-10 text-white" />
                             </div>
-                            <h3 className="text-xl font-bold text-gray-800 mb-3">{booking.facilities.name}</h3>
-                            <div className="space-y-2 text-sm text-gray-600 mb-4">
-                                <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{new Date(booking.booking_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span></div>
-                                <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{booking.booking_time}</span></div>
+                            <h3 className="text-md sm:text-lg font-bold text-gray-800 mb-2">{booking.facilities.name}</h3>
+                            <div className="space-y-1 text-xs sm:text-sm text-gray-600 mb-3">
+                                <div className="flex items-center gap-2"><Calendar className="w-4 h-4 flex-shrink-0" /><span>{new Date(booking.booking_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</span></div>
+                                <div className="flex items-center gap-2"><Clock className="w-4 h-4 flex-shrink-0" /><span>{booking.booking_time}</span></div>
                             </div>
                         </div>
-                        <Button onClick={() => handleCancel(booking.id)} variant="destructive" className="w-full mt-auto"><X className="w-4 h-4 mr-2"/>Cancel Booking</Button>
+                        <Button onClick={() => handleCancel(booking.id)} variant="destructive" size="sm" className="w-full mt-auto text-xs sm:text-sm"><X className="w-4 h-4 mr-1 sm:mr-2"/>Cancel</Button>
                     </motion.div>
                     ))}
                 </div>

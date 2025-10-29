@@ -1,5 +1,4 @@
-
-    import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
     import { motion } from 'framer-motion';
     import { Bell, Calendar, AlertCircle, Search, Loader2 } from 'lucide-react';
     import { supabase } from '@/lib/customSupabaseClient';
@@ -110,4 +109,3 @@
     };
 
     export default Announcements;
-  

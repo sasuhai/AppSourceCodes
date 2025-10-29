@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
     import { motion } from 'framer-motion';
     import { QrCode, Plus, Calendar, Clock, User, Phone, Car, Loader2, Trash2 } from 'lucide-react';
@@ -233,4 +232,3 @@ import React, { useState, useEffect, useCallback } from 'react';
     };
 
     export default VisitorInvitation;
-  
