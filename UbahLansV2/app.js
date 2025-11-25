@@ -2,14 +2,17 @@
 // CONFIGURATION
 // ===================================
 const CONFIG = {
-    GEMINI_API_KEY: 'AIzaSyDfL16p9fJ2Erf8Um3xpdP4OL0trfxx1pc',
+    GEMINI_API_KEY: 'AIzaSyCpRRzogVanNEg24qxizsljOxExfaEOrk0',
     GEMINI_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
-    DEFAULT_MODEL: 'gemini-2.0-flash-exp',
+    IMAGEN_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
+    DEFAULT_MODEL: 'gemini-2.0-flash-exp', // Latest Gemini 2.0 Flash
+    IMAGE_MODEL: 'gemini-3-pro-image-preview', // Nano Banana Pro - Latest Image Editing Model
     MODELS: {
-        'auto': 'gemini-2.0-flash-exp',
-        'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
-        'gemini-1.5-pro': 'gemini-1.5-pro-latest',
-        'gemini-1.5-flash': 'gemini-1.5-flash-latest'
+        'auto': 'gemini-2.0-flash-exp', // Auto-selects Gemini 2.0 Flash
+        'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp', // Gemini 2.0 Flash (Fastest, Latest)
+        'gemini-2.0-flash-thinking-exp': 'gemini-2.0-flash-thinking-exp-01-21', // Gemini 2.0 with advanced reasoning
+        'gemini-1.5-pro': 'gemini-1.5-pro-latest', // Gemini 1.5 Pro (Stable)
+        'gemini-1.5-flash': 'gemini-1.5-flash-latest' // Gemini 1.5 Flash (Stable)
     }
 };
 
@@ -62,16 +65,14 @@ const elements = {
     progressBar: document.getElementById('progressBar'),
 
     // Results
-    beforeImage: document.getElementById('beforeImage'),
-    afterImage: document.getElementById('afterImage'),
-    sliderContainer: document.getElementById('sliderContainer'),
-    sliderHandle: document.getElementById('sliderHandle'),
+    transformedImage: document.getElementById('transformedImage'),
     topViewSection: document.getElementById('topViewSection'),
     topViewImage: document.getElementById('topViewImage'),
     inventorySection: document.getElementById('inventorySection'),
     inventoryContent: document.getElementById('inventoryContent'),
     newDesignBtn: document.getElementById('newDesignBtn'),
-    downloadBtn: document.getElementById('downloadBtn'),
+    downloadReportBtn: document.getElementById('downloadReportBtn'),
+    reuseImageCheckbox: document.getElementById('reuseImageCheckbox'),
     shareBtn: document.getElementById('shareBtn')
 };
 
@@ -96,7 +97,15 @@ function setupEventListeners() {
     elements.mobileMenuBtn?.addEventListener('click', toggleMobileMenu);
 
     // Upload
-    elements.uploadArea?.addEventListener('click', () => elements.fileInput?.click());
+    elements.uploadArea?.addEventListener('click', (e) => {
+        // Prevent infinite loop if input is clicked
+        if (e.target !== elements.fileInput) {
+            elements.fileInput?.click();
+        }
+    });
+    // Stop propagation from file input to prevent double-triggering
+    elements.fileInput?.addEventListener('click', (e) => e.stopPropagation());
+
     elements.uploadArea?.addEventListener('dragover', handleDragOver);
     elements.uploadArea?.addEventListener('dragleave', handleDragLeave);
     elements.uploadArea?.addEventListener('drop', handleDrop);
@@ -109,14 +118,10 @@ function setupEventListeners() {
 
     // Results
     elements.newDesignBtn?.addEventListener('click', resetApp);
-    elements.downloadBtn?.addEventListener('click', downloadImages);
+    elements.downloadReportBtn?.addEventListener('click', downloadFullReport);
     elements.shareBtn?.addEventListener('click', shareResults);
 
-    // Slider
-    if (elements.sliderContainer) {
-        elements.sliderContainer.addEventListener('mousedown', startSlider);
-        elements.sliderContainer.addEventListener('touchstart', startSlider);
-    }
+    // Slider removed - now using simple image display
 
     // Close mobile menu when clicking links
     document.querySelectorAll('.mobile-nav-link').forEach(link => {
@@ -214,19 +219,23 @@ async function handleFile(file) {
 
     // Read file
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         const imageData = e.target.result;
         console.log('Image data loaded, length:', imageData.length);
         console.log('Preview image element:', elements.previewImage);
 
+        // Resize image if too large (max 1536px) to speed up API
+        const resizedImageData = await resizeImage(imageData, 1536, 0.8);
+        console.log('Image resized, new length:', resizedImageData.length);
+
         // Store in state
         state.uploadedImage = file;
-        state.uploadedImageData = imageData;
+        state.uploadedImageData = resizedImageData;
 
         // Show preview - set src first, then make visible
         if (elements.previewImage) {
-            elements.previewImage.src = imageData;
-            console.log('Image src set to:', imageData.substring(0, 50) + '...');
+            elements.previewImage.src = resizedImageData;
+            console.log('Image src set to:', resizedImageData.substring(0, 50) + '...');
 
             // Wait for image to load before showing
             elements.previewImage.onload = () => {
@@ -252,6 +261,31 @@ async function handleFile(file) {
 
     reader.readAsDataURL(file);
     console.log('FileReader started');
+}
+
+// Helper: Resize image
+function resizeImage(base64Str, maxWidth = 1536, quality = 0.8) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = base64Str;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+    });
+
 }
 
 function removeImage() {
@@ -322,64 +356,327 @@ async function callGeminiAPI(prompt, imageData, model = null) {
 }
 
 async function generateImageWithGemini(prompt, referenceImageData) {
-    // For image generation, we'll use a different approach
-    // Since Gemini doesn't directly generate images, we'll create a detailed description
-    // and then use a placeholder with that description
+    try {
+        // Nano Banana (Gemini 2.5 Flash Image) does image-to-image editing
+        // It takes the original image and modifies it based on the prompt
 
-    const enhancedPrompt = `Based on this image, create a detailed description for a landscape transformation with the following requirements: ${prompt}. 
-    
-    Describe in detail:
-    1. The exact plants, trees, and landscaping features to add
-    2. Their specific placement and arrangement
-    3. Colors, textures, and materials
-    4. Any hardscaping elements (paths, patios, walls, etc.)
-    5. Lighting and water features if applicable
-    
-    Be extremely specific and detailed so the transformation can be visualized.`;
+        const editPrompt = `Edit this photo: Keep ALL walls, windows, doors, and building structures EXACTLY as they are. Only modify the landscaping (grass, plants, flowers). ${prompt}. 
+        CRITICAL INSTRUCTION: You MUST overlay CLEAR, VISIBLE WHITE CIRCLES with BLACK NUMBERS (1, 2, 3...) on top of the key PLANTS and TREES you add.
+        - Focus numbering on the greenery (trees, shrubs, flowers).
+        - Only number major hardscape features if they are central to the design.
+        - The numbers must be large enough to be read.
+        - Place them directly on or next to the new items.
+        
+        Return the edited image.`;
 
-    const description = await callGeminiAPI(enhancedPrompt, referenceImageData);
+        console.log('Using Nano Banana (Gemini 2.5 Flash Image) for image editing...');
 
-    // Generate a placeholder image based on the description
-    return await generatePlaceholderImage(800, 600, description);
+        // Call Gemini with both image and edit instructions
+        const imageUrl = await callNanoBananaAPI(editPrompt, referenceImageData);
+
+        return imageUrl;
+    } catch (error) {
+        console.error('Image generation error:', error);
+
+        // Fallback to description
+        console.log('Falling back to description-based generation...');
+        const description = await callGeminiAPI(
+            `Describe a landscape transformation: ${prompt}`,
+            referenceImageData
+        );
+        return await generatePlaceholderImage(800, 600, description);
+    }
+}
+
+async function callNanoBananaAPI(prompt, imageData) {
+    try {
+        // Extract mime type and base64 data
+        const matches = imageData.match(/^data:(.+);base64,(.+)$/);
+        if (!matches) throw new Error('Invalid image data format');
+
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+
+        console.log(`Preparing Nano Banana request with MIME type: ${mimeType}`);
+
+        const requestBody = {
+            contents: [{
+                parts: [
+                    {
+                        text: prompt
+                    },
+                    {
+                        inline_data: {
+                            mime_type: mimeType,
+                            data: base64Data
+                        }
+                    }
+                ]
+            }],
+            generationConfig: {
+                temperature: 0.4,
+                topK: 32,
+                topP: 1,
+                maxOutputTokens: 4096,
+            }
+        };
+
+        console.log('Calling Gemini 3.0 Pro Image API with image editing prompt...');
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 second timeout (3 mins)
+
+        let response;
+        let retries = 3;
+        let lastError;
+
+        while (retries > 0) {
+            try {
+                response = await fetch(
+                    `${CONFIG.GEMINI_API_BASE}/models/${CONFIG.IMAGE_MODEL}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'x-goog-api-key': CONFIG.GEMINI_API_KEY,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestBody),
+                        signal: controller.signal
+                    }
+                );
+
+                // If successful or client error (4xx), break loop
+                // Only retry on server errors (5xx)
+                if (response.ok || response.status < 500) {
+                    break;
+                }
+
+                throw new Error(`Server Error: ${response.status}`);
+
+            } catch (error) {
+                lastError = error;
+                if (error.name === 'AbortError') {
+                    throw new Error('Request timed out after 180 seconds');
+                }
+
+                console.warn(`API attempt failed. Retries left: ${retries - 1}. Error: ${error.message}`);
+                retries--;
+
+                if (retries > 0) {
+                    // Wait 2 seconds before retrying
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+        }
+
+        clearTimeout(timeoutId);
+
+        if (!response) {
+            throw lastError || new Error('Failed to connect to API');
+        }
+
+        const data = await response.json();
+        console.log('Nano Banana API full response:', JSON.stringify(data, null, 2));
+
+        if (!response.ok) {
+            console.error('Nano Banana API error:', data);
+            throw new Error(`Nano Banana API Error: ${data.error?.message || response.statusText}`);
+        }
+
+        // Extract the edited image from response
+        if (data.candidates && data.candidates[0]) {
+            const candidate = data.candidates[0];
+
+            // Check for safety finish reason
+            if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+                console.warn('Generation stopped due to:', candidate.finishReason);
+                if (candidate.safetyRatings) {
+                    console.warn('Safety ratings:', candidate.safetyRatings);
+                }
+            }
+
+            // Look for inline_data (image)
+            if (candidate.content && candidate.content.parts) {
+                for (const part of candidate.content.parts) {
+                    // Handle both camelCase (inlineData) and snake_case (inline_data)
+                    const inlineData = part.inlineData || part.inline_data;
+
+                    if (inlineData && inlineData.data) {
+                        const responseMime = inlineData.mimeType || inlineData.mime_type || 'image/png';
+                        return `data:${responseMime};base64,${inlineData.data}`;
+                    }
+
+                    // Check if model returned text instead (error/refusal)
+                    if (part.text) {
+                        console.warn('Model returned text instead of image:', part.text);
+                        // If it's a refusal, throw it as an error
+                        if (part.text.includes("cannot") || part.text.includes("sorry") || part.text.includes("apologize")) {
+                            throw new Error(`Model refused to edit image: ${part.text}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        throw new Error('No edited image in Nano Banana response (check console for details)');
+    } catch (error) {
+        console.error('Nano Banana API call failed:', error);
+        throw error;
+    }
+}
+
+async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
+    try {
+        const requestBody = {
+            instances: [
+                {
+                    prompt: prompt
+                }
+            ],
+            parameters: {
+                sampleCount: 1,
+                aspectRatio: "16:9",
+                safetyFilterLevel: "block_some",
+                personGeneration: "dont_allow"
+            }
+        };
+
+        console.log(`Calling Imagen API (${modelVersion}) with prompt:`, prompt.substring(0, 200) + '...');
+
+        const response = await fetch(
+            `${CONFIG.IMAGEN_API_BASE}/models/${modelVersion}:predict`,
+            {
+                method: 'POST',
+                headers: {
+                    'x-goog-api-key': CONFIG.GEMINI_API_KEY,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            }
+        );
+
+        const data = await response.json();
+        console.log('Imagen API full response:', JSON.stringify(data, null, 2));
+
+        if (!response.ok) {
+            console.error('Imagen API error response:', data);
+
+            // If Imagen 4 fails, try Imagen 3
+            if (modelVersion === 'imagen-4.0-generate-001') {
+                console.log('Imagen 4 failed, trying Imagen 3...');
+                return await callImagenAPI(prompt, 'imagen-3.0-generate-001');
+            }
+
+            throw new Error(`Imagen API Error: ${data.error?.message || response.statusText}`);
+        }
+
+        // Extract the generated image from the response
+        if (data.predictions && data.predictions[0]) {
+            const prediction = data.predictions[0];
+            console.log('Prediction object:', prediction);
+
+            // The image is in bytesBase64Encoded or mimeType + bytesBase64Encoded
+            if (prediction.bytesBase64Encoded) {
+                return `data:image/png;base64,${prediction.bytesBase64Encoded}`;
+            } else if (prediction.image && prediction.image.bytesBase64Encoded) {
+                return `data:image/png;base64,${prediction.image.bytesBase64Encoded}`;
+            } else {
+                console.error('Unexpected response format:', prediction);
+                throw new Error('No image data in Imagen response - unexpected format');
+            }
+        } else {
+            console.error('No predictions in response. Full response:', data);
+
+            // Check if it's an access/permission error
+            if (data.error) {
+                throw new Error(`Imagen API Error: ${data.error.message || 'Unknown error'}`);
+            }
+
+            throw new Error('No predictions in Imagen response - API may not be enabled for your account');
+        }
+    } catch (error) {
+        console.error('Imagen API call failed:', error);
+        throw error;
+    }
 }
 
 async function generateTopDownView(transformationDescription, originalImageData) {
-    const prompt = `Based on this property image and the following landscape transformation: "${transformationDescription}", 
-    create a detailed description of what a top-down architectural plan view would show. Include:
-    1. Property boundaries and dimensions
-    2. Placement of all plants, trees, and features
-    3. Pathways, patios, and hardscaping
-    4. Spatial relationships and measurements
-    
-    Be specific about layout and positioning.`;
+    try {
+        // Step 1: Analyze the property layout
+        const layoutPrompt = `Analyze this property image and describe the layout from a top-down perspective:
+1. Property boundaries and dimensions
+2. Building footprint and structure
+3. Current landscape elements and their positions
+4. Pathways, driveways, and hardscaping
+5. Spatial relationships between elements`;
 
-    const description = await callGeminiAPI(prompt, originalImageData);
+        const layoutAnalysis = await callGeminiAPI(layoutPrompt, originalImageData);
+        console.log('Layout analysis:', layoutAnalysis);
 
-    // Generate a placeholder top-down view
-    return await generatePlaceholderImage(800, 800, `Top-down architectural plan view: ${description}`);
+        // Step 2: Create prompt for top-down architectural view
+        const topDownPrompt = `Create a professional top-down architectural plan view of this property with the landscape transformation applied.
+
+REQUIREMENTS:
+- Bird's eye view / aerial perspective looking straight down
+- Architectural style plan with clear boundaries
+- Show building footprint, pathways, and all landscape elements
+- Professional landscape architecture drawing style
+- Include the transformation: ${transformationDescription}
+
+PROPERTY LAYOUT:
+${layoutAnalysis}
+
+Generate a clean, professional top-down architectural plan that shows the property layout with the new landscape design. Style should be like a landscape architect's plan view.`;
+
+        console.log('Generating top-down view with Imagen 3...');
+        const imageUrl = await callImagenAPI(topDownPrompt);
+        return imageUrl;
+    } catch (error) {
+        console.error('Top-down view generation error:', error);
+
+        // Fallback to placeholder
+        const description = await callGeminiAPI(
+            `Describe a top-down view of: ${transformationDescription}`,
+            originalImageData
+        );
+        return await generatePlaceholderImage(800, 800, `Top-down view: ${description}`);
+    }
 }
 
-async function generateInventoryList(transformationDescription) {
-    const prompt = `Based on this landscape transformation description: "${transformationDescription}", 
-    create a detailed inventory list in the following format:
-    
-    **Plants & Trees:**
-    - List each plant/tree with quantity and size
-    
-    **Hardscaping Materials:**
-    - List materials needed with estimated quantities
-    
-    **Features:**
-    - List any special features (water features, lighting, etc.)
-    
-    **Estimated Costs:**
-    - Provide rough cost estimates for each category
-    
-    Be specific and practical for a real landscaping project.`;
+async function generateInventoryList(transformationDescription, transformedImageUrl) {
+    let prompt;
+    let result;
 
-    // For inventory, we can use text-only API call
-    const inventoryText = await callGeminiAPITextOnly(prompt);
-    return inventoryText;
+    if (transformedImageUrl) {
+        // Multimodal: Look at the image and identify numbered items
+        prompt = `Look at this landscape design image. Identify the numbered markers (1, 2, 3...) which mark the PLANTS and TREES.
+        
+        Create a strictly formatted legend list focusing on the vegetation.
+        DO NOT say "Okay" or "Here is the list". Start directly with the first item.
+        
+        Format exactly like this:
+        1. **[Plant/Tree Name]**: [Short description]
+        2. **[Plant/Tree Name]**: [Short description]
+        
+        If there are numbered hardscape features, list them as well, but prioritize the plants.`;
+
+        // Use the multimodal API
+        result = await callGeminiAPI(prompt, transformedImageUrl);
+    } else {
+        // Fallback: Text-only generation
+        prompt = `Based on this landscape transformation description: "${transformationDescription}", 
+        create a simple list of plants and features.
+        
+        DO NOT include any conversational text. Start directly with the list.
+        
+        Format:
+        1. **[Item Name]**: [Short description]
+        2. **[Item Name]**: [Short description]`;
+
+        result = await callGeminiAPITextOnly(prompt);
+    }
+
+    return result;
 }
 
 async function callGeminiAPITextOnly(prompt) {
@@ -437,13 +734,11 @@ async function autoFillPrompt() {
     elements.autoFillBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="spinning"><circle cx="8" cy="8" r="6" stroke="currentColor" fill="none" stroke-width="2"/></svg> Analyzing...';
 
     try {
-        const prompt = `Analyze this property image and suggest 3 creative landscape transformation ideas. 
-        For each idea, provide:
-        1. A catchy name
-        2. A brief description
-        3. Key features
+        const prompt = `Analyze this property image and suggest ONE single, best creative landscape transformation idea.
         
-        Format as a simple list that a homeowner can choose from.`;
+        Provide a concise, descriptive paragraph describing the new design, including specific plants, style, and features.
+        
+        Do not use bullet points or lists. Just write it as a clear instruction for a designer.`;
 
         const suggestions = await callGeminiAPI(prompt, state.uploadedImageData);
         elements.promptInput.value = suggestions;
@@ -490,17 +785,12 @@ async function generateTransformation() {
         const transformedImageUrl = await generateImageWithGemini(prompt, state.uploadedImageData);
         state.transformedImage = transformedImageUrl;
 
-        // Step 2: Generate top view if requested (70%)
-        if (elements.generateTopView.checked) {
-            updateProgress(70, 'Generating top-down plan view...');
-            const topViewUrl = await generateTopDownView(prompt, state.uploadedImageData);
-            state.topViewImage = topViewUrl;
-        }
-
-        // Step 3: Generate inventory if requested (90%)
+        // Step 2: Generate inventory if requested (90%)
+        let inventory = null;
         if (elements.generateInventory.checked) {
             updateProgress(90, 'Creating smart inventory...');
-            const inventory = await generateInventoryList(prompt);
+            // Pass the transformed image to generate inventory legend
+            inventory = await generateInventoryList(prompt, transformedImageUrl);
             state.inventory = inventory;
         }
 
@@ -508,8 +798,19 @@ async function generateTransformation() {
         updateProgress(100, 'Finalizing your design...');
         await sleep(500);
 
-        // Show results
-        showResults();
+        // Add result to list (stacking)
+        // Pass original image data as the second argument
+        addResultItem(prompt, state.uploadedImageData, transformedImageUrl, inventory);
+
+        // Show results section
+        elements.loadingSection.style.display = 'none';
+        elements.resultsSection.style.display = 'block';
+
+        // Scroll to the new result
+        const resultsList = document.getElementById('resultsList');
+        if (resultsList.lastElementChild) {
+            resultsList.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+        }
     } catch (error) {
         console.error('Generation error:', error);
 
@@ -542,43 +843,208 @@ function sleep(ms) {
 // ===================================
 // SHOW RESULTS
 // ===================================
-function showResults() {
-    // Hide loading
-    elements.loadingSection.style.display = 'none';
+function addResultItem(prompt, originalImageUrl, transformedImageUrl, inventoryText) {
+    const resultsList = document.getElementById('resultsList');
 
-    // Set images
-    elements.beforeImage.src = state.uploadedImageData;
-    elements.afterImage.src = state.transformedImage;
+    // Check if we need to display the original image (if it's new)
+    if (originalImageUrl !== state.lastDisplayedOriginalImage) {
+        const originalItem = document.createElement('div');
+        originalItem.className = 'result-item';
+        originalItem.style.marginBottom = '2rem';
+        originalItem.style.border = '2px solid var(--color-primary)'; // Highlight original
 
-    // Show top view if generated
-    if (state.topViewImage) {
-        elements.topViewImage.src = state.topViewImage;
-        elements.topViewSection.style.display = 'flex';
-    } else {
-        elements.topViewSection.style.display = 'none';
+        originalItem.innerHTML = `
+            <div class="result-prompt" style="border-bottom: none; margin-bottom: 1rem;">
+                <span class="prompt-label" style="color: var(--color-primary);">Original Property</span>
+            </div>
+            <div class="transformed-image-container" style="margin-bottom: 0;">
+                <img src="${originalImageUrl}" alt="Original Landscape" class="transformed-image">
+            </div>
+        `;
+        resultsList.appendChild(originalItem);
+
+        // Update state
+        state.lastDisplayedOriginalImage = originalImageUrl;
     }
 
-    // Show inventory if generated
-    if (state.inventory) {
-        elements.inventoryContent.innerHTML = formatInventory(state.inventory);
-        elements.inventorySection.style.display = 'flex';
-    } else {
-        elements.inventorySection.style.display = 'none';
+    // Create result item container for the transformation
+    const resultItem = document.createElement('div');
+    resultItem.className = 'result-item';
+
+    // 1. Prompt Section
+    const promptSection = document.createElement('div');
+    promptSection.className = 'result-prompt';
+    promptSection.innerHTML = `
+        <span class="prompt-label">Transformation Vision</span>
+        <p class="prompt-text">${prompt}</p>
+    `;
+    resultItem.appendChild(promptSection);
+
+    // 2. Transformed Image (Stacked & Big)
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'transformed-image-container';
+    imageContainer.style.marginBottom = '2rem';
+    imageContainer.innerHTML = `<img src="${transformedImageUrl}" alt="Transformed Landscape" class="transformed-image">`;
+    resultItem.appendChild(imageContainer);
+
+    // 3. Inventory Legend (if available)
+    if (inventoryText) {
+        const inventorySection = document.createElement('div');
+        inventorySection.className = 'inventory-section';
+        inventorySection.innerHTML = `
+            <div class="inventory-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h4 class="inventory-title" style="margin-bottom: 0;">Smart Inventory & Legend</h4>
+            </div>
+            <div class="inventory-content">
+                ${formatInventory(inventoryText)}
+            </div>
+        `;
+        resultItem.appendChild(inventorySection);
     }
 
-    // Show results section
-    elements.resultsSection.style.display = 'flex';
+    // 4. Action Buttons
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'results-actions';
+    actionsDiv.style.marginTop = '1.5rem';
+    actionsDiv.style.borderTop = '1px solid var(--color-gray-light)';
+    actionsDiv.style.paddingTop = '1rem';
 
-    // Scroll to results
-    elements.resultsSection.scrollIntoView({ behavior: 'smooth' });
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'btn-secondary';
+    downloadBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download Design Package
+    `;
+    downloadBtn.onclick = () => downloadResultItem(transformedImageUrl, inventoryText);
+
+    actionsDiv.appendChild(downloadBtn);
+    resultItem.appendChild(actionsDiv);
+
+    // Append to list
+    resultsList.appendChild(resultItem);
+}
+
+function downloadResultItem(imageUrl, inventoryText) {
+    // Download Transformed Image
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = 'ubahlans-transformation.jpg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Download Inventory (if exists)
+    if (inventoryText) {
+        setTimeout(() => {
+            const blob = new Blob([inventoryText], { type: 'text/plain' });
+            const link3 = document.createElement('a');
+            link3.href = URL.createObjectURL(blob);
+            link3.download = 'ubahlans-inventory.txt';
+            document.body.appendChild(link3);
+            link3.click();
+            document.body.removeChild(link3);
+        }, 500);
+    }
+}
+
+async function downloadFullReport() {
+    const resultsList = document.getElementById('resultsList');
+    if (!resultsList || resultsList.children.length === 0) {
+        alert('No designs to download yet.');
+        return;
+    }
+
+    const btn = elements.downloadReportBtn;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = 'Generating...';
+    btn.disabled = true;
+
+    try {
+        // Create and add report header
+        const reportHeader = document.createElement('div');
+        reportHeader.className = 'report-header';
+        reportHeader.style.display = 'block'; // Force display for capture
+
+        const currentDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        reportHeader.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1 style="margin: 0; font-size: 1.75rem; font-weight: 700;">UbahLans</h1>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 0.95rem; opacity: 0.9;">AI-Powered Landscape Design Report</p>
+                </div>
+                <div style="text-align: right;">
+                    <p style="margin: 0; font-size: 0.9rem; opacity: 0.9;">Generated: ${currentDate}</p>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; opacity: 0.8;">${resultsList.children.length} Design${resultsList.children.length > 1 ? 's' : ''}</p>
+                </div>
+            </div>
+        `;
+
+        // Insert header at the beginning of results list
+        resultsList.insertBefore(reportHeader, resultsList.firstChild);
+
+        // Use html2canvas to capture the results list
+        const canvas = await html2canvas(resultsList, {
+            scale: 2, // Higher quality
+            useCORS: true, // Allow cross-origin images
+            backgroundColor: '#ffffff',
+            logging: false
+        });
+
+        // Remove the header after capture
+        reportHeader.remove();
+
+        // Convert to blob and download
+        canvas.toBlob((blob) => {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `ubahlans-report-${new Date().toISOString().split('T')[0]}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }, 'image/jpeg', 0.95);
+
+    } catch (error) {
+        console.error('Report generation failed:', error);
+        alert('Failed to generate report. Please try again.');
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 
 function formatInventory(inventoryText) {
-    // Convert markdown-style text to HTML
+    // Clean up conversational text
     let html = inventoryText;
 
-    // Convert **bold** to <strong>
+    // Aggressive cleanup: Find the first list item or bold header and discard everything before it
+    // Look for: "1.", "-", "*", or "**" at the start of a line
+    const listStartIndex = html.search(/^(\d+\.|-|\*|\*\*)/m);
+
+    if (listStartIndex >= 0) {
+        html = html.substring(listStartIndex);
+    } else {
+        // Fallback: If no clear list start, try to strip common intros
+        html = html.replace(/^(Okay|Sure|Here|Certainly|I have|The list|Legend:|\*\*Legend:\*\*).*?(\n|$)/gim, '');
+    }
+
+    // Convert **bold** to <h5> for items
     html = html.replace(/\*\*(.*?)\*\*/g, '<h5>$1</h5>');
+
+    // Convert numbered lists (1. Item: Desc)
+    html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<div class="inventory-item"><div class="inventory-number">$1</div><div class="inventory-details">$2</div></div>');
 
     // Convert bullet points
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
@@ -586,71 +1052,59 @@ function formatInventory(inventoryText) {
     // Wrap lists in <ul>
     html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
 
-    // Convert line breaks
-    html = html.replace(/\n\n/g, '<br><br>');
+    // Convert newlines to breaks for other text
+    html = html.replace(/\n/g, '<br>');
 
     return html;
 }
 
-// ===================================
-// BEFORE/AFTER SLIDER
-// ===================================
-let isSliding = false;
-
-function startSlider(e) {
-    isSliding = true;
-    updateSlider(e);
-
-    const moveEvent = e.type.includes('mouse') ? 'mousemove' : 'touchmove';
-    const endEvent = e.type.includes('mouse') ? 'mouseup' : 'touchend';
-
-    document.addEventListener(moveEvent, updateSlider);
-    document.addEventListener(endEvent, stopSlider);
-}
-
-function updateSlider(e) {
-    if (!isSliding && e.type !== 'mousedown' && e.type !== 'touchstart') return;
-
-    const container = elements.sliderContainer;
-    const rect = container.getBoundingClientRect();
-    const x = (e.type.includes('mouse') ? e.clientX : e.touches[0].clientX) - rect.left;
-    const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
-
-    elements.sliderHandle.style.left = `${percent}%`;
-    elements.afterImage.style.clipPath = `inset(0 ${100 - percent}% 0 0)`;
-}
-
-function stopSlider() {
-    isSliding = false;
-    document.removeEventListener('mousemove', updateSlider);
-    document.removeEventListener('touchmove', updateSlider);
-    document.removeEventListener('mouseup', stopSlider);
-    document.removeEventListener('touchend', stopSlider);
-}
+// Slider functionality removed - using simple image display
 
 // ===================================
 // RESET APP
 // ===================================
 function resetApp() {
+    const reuseImage = elements.reuseImageCheckbox?.checked;
+
     // Reset state
-    state.uploadedImage = null;
-    state.uploadedImageData = null;
+    if (!reuseImage) {
+        state.uploadedImage = null;
+        state.uploadedImageData = null;
+
+        // Reset UI for Image
+        // Clear handlers first to prevent errors when clearing src
+        elements.previewImage.onload = null;
+        elements.previewImage.onerror = null;
+        elements.previewImage.src = '';
+        elements.fileInput.value = '';
+
+        elements.uploadArea.style.display = 'block';
+        elements.imagePreview.style.display = 'none';
+        elements.optionsSection.style.display = 'none';
+
+        // Scroll to upload section
+        elements.uploadSection.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        // Keeping image, just reset prompt and scroll to options
+        elements.optionsSection.style.display = 'flex'; // Ensure visible
+        // Scroll to options section
+        elements.optionsSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
     state.transformedImage = null;
     state.topViewImage = null;
     state.inventory = null;
+    // state.lastDisplayedOriginalImage = null; // REMOVED: Do not reset this, so we remember what we showed!
 
-    // Reset UI
-    elements.previewImage.src = '';
+    // Reset Prompt
     elements.promptInput.value = '';
-    elements.fileInput.value = '';
-    elements.uploadArea.style.display = 'block';
-    elements.imagePreview.style.display = 'none';
-    elements.optionsSection.style.display = 'none';
-    elements.resultsSection.style.display = 'none';
-    elements.progressBar.style.width = '0%';
 
-    // Scroll to app section
-    elements.uploadSection.scrollIntoView({ behavior: 'smooth' });
+    // Only hide results section if there are no results (keep them if stacking)
+    const resultsList = document.getElementById('resultsList');
+    if (!resultsList || resultsList.children.length === 0) {
+        elements.resultsSection.style.display = 'none';
+    }
+    elements.progressBar.style.width = '0%';
 }
 
 // ===================================

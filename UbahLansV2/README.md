@@ -48,8 +48,18 @@ UbahLans is a professional, dynamic web application that provides AI-powered lan
 
 ### AI Integration
 - **Google Gemini API** - Advanced AI capabilities
-- **API Key:** AIzaSyDfL16p9fJ2Erf8Um3xpdP4OL0trfxx1pc
-- **Models:** Gemini 2.0 Flash, 1.5 Pro, 1.5 Flash
+- **Imagen 3** - State-of-the-art image generation
+- **API Key:** AIzaSyCpRRzogVanNEg24qxizsljOxExfaEOrk0 (Pro Account)
+- **Text Models:** Gemini 2.0 Flash, 1.5 Pro, 1.5 Flash
+- **Image Model:** Imagen 3.0 Generate
+
+### AI Capabilities
+- **Real Image Generation** - Actual AI-generated landscape transformations
+- **Perspective Preservation** - Maintains exact camera angle and viewpoint
+- **Structure Preservation** - Keeps all fixed elements (walls, windows, roof) intact
+- **Photorealistic Output** - Professional quality results
+- **Top-Down Views** - Architectural plan generation
+- **Smart Analysis** - Intelligent image understanding
 
 ## Design Features
 
