@@ -425,7 +425,26 @@ async function callNanoBananaAPI(prompt, imageData) {
         if (!response.ok) {
             const error = await response.json();
             console.error('Netlify Function error:', error);
-            throw new Error(error.error || JSON.stringify(error) || 'API request failed');
+
+            // Extract the actual error message
+            let errorMsg = 'Unknown error';
+            if (error.error) {
+                if (typeof error.error === 'string') {
+                    errorMsg = error.error;
+                } else if (error.error.message) {
+                    errorMsg = error.error.message;
+                } else {
+                    errorMsg = JSON.stringify(error.error);
+                }
+            } else if (error.details) {
+                errorMsg = error.details;
+            } else if (error.message) {
+                errorMsg = error.message;
+            } else {
+                errorMsg = 'API request failed';
+            }
+
+            throw new Error(errorMsg);
         }
 
         const data = await response.json();
