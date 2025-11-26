@@ -2,9 +2,7 @@
 // CONFIGURATION
 // ===================================
 const CONFIG = {
-    // API key from environment variable (injected by GitHub Actions)
-    // For local testing, temporarily add your key here (DON'T COMMIT IT!)
-    GEMINI_API_KEY: window.ENV?.GEMINI_API_KEY || '',
+    GEMINI_API_KEY: 'AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo', // New key - set HTTP referrer restrictions!
     GEMINI_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     IMAGEN_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     DEFAULT_MODEL: 'gemini-2.0-flash-exp', // Latest Gemini 2.0 Flash
@@ -334,7 +332,7 @@ async function callGeminiAPI(prompt, imageData, model = null) {
         };
 
         const response = await fetch(
-            `${CONFIG.GEMINI_API_BASE} /models/${selectedModel}: generateContent ? key = ${CONFIG.GEMINI_API_KEY} `,
+            `${CONFIG.GEMINI_API_BASE}/models/${selectedModel}:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
             {
                 method: 'POST',
                 headers: {
@@ -346,7 +344,7 @@ async function callGeminiAPI(prompt, imageData, model = null) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`API Error: ${errorData.error?.message || response.statusText} `);
+            throw new Error(`API Error: ${errorData.error?.message || response.statusText}`);
         }
 
         const data = await response.json();
@@ -369,9 +367,9 @@ async function generateImageWithGemini(prompt, referenceImageData) {
         // Nano Banana (Gemini 2.5 Flash Image) does image-to-image editing
         // It takes the original image and modifies it based on the prompt
 
-        const editPrompt = `Edit this photo: Keep ALL walls, windows, doors, and building structures EXACTLY as they are.Only modify the landscaping(grass, plants, flowers).${prompt}. 
-        CRITICAL INSTRUCTION: You MUST overlay CLEAR, VISIBLE WHITE CIRCLES with BLACK NUMBERS(1, 2, 3...) on top of the key PLANTS and TREES you add.
-        - Focus numbering on the greenery(trees, shrubs, flowers).
+        const editPrompt = `Edit this photo: Keep ALL walls, windows, doors, and building structures EXACTLY as they are. Only modify the landscaping (grass, plants, flowers). ${prompt}. 
+        CRITICAL INSTRUCTION: You MUST overlay CLEAR, VISIBLE WHITE CIRCLES with BLACK NUMBERS (1, 2, 3...) on top of the key PLANTS and TREES you add.
+        - Focus numbering on the greenery (trees, shrubs, flowers).
         - Only number major hardscape features if they are central to the design.
         - The numbers must be large enough to be read.
         - Place them directly on or next to the new items.
@@ -390,7 +388,7 @@ async function generateImageWithGemini(prompt, referenceImageData) {
         // Fallback to description
         console.log('Falling back to description-based generation...');
         const description = await callGeminiAPI(
-            `Describe a landscape transformation: ${prompt} `,
+            `Describe a landscape transformation: ${prompt}`,
             referenceImageData
         );
         return await generatePlaceholderImage(800, 600, description);
@@ -406,7 +404,7 @@ async function callNanoBananaAPI(prompt, imageData) {
         const mimeType = matches[1];
         const base64Data = matches[2];
 
-        console.log(`Preparing Nano Banana request with MIME type: ${mimeType} `);
+        console.log(`Preparing Nano Banana request with MIME type: ${mimeType}`);
 
         const requestBody = {
             contents: [{
@@ -442,7 +440,7 @@ async function callNanoBananaAPI(prompt, imageData) {
         while (retries > 0) {
             try {
                 response = await fetch(
-                    `${CONFIG.GEMINI_API_BASE} /models/${CONFIG.IMAGE_MODEL}: generateContent`,
+                    `${CONFIG.GEMINI_API_BASE}/models/${CONFIG.IMAGE_MODEL}:generateContent`,
                     {
                         method: 'POST',
                         headers: {
@@ -460,7 +458,7 @@ async function callNanoBananaAPI(prompt, imageData) {
                     break;
                 }
 
-                throw new Error(`Server Error: ${response.status} `);
+                throw new Error(`Server Error: ${response.status}`);
 
             } catch (error) {
                 lastError = error;
@@ -468,7 +466,7 @@ async function callNanoBananaAPI(prompt, imageData) {
                     throw new Error('Request timed out after 180 seconds');
                 }
 
-                console.warn(`API attempt failed.Retries left: ${retries - 1}.Error: ${error.message} `);
+                console.warn(`API attempt failed. Retries left: ${retries - 1}. Error: ${error.message}`);
                 retries--;
 
                 if (retries > 0) {
@@ -489,7 +487,7 @@ async function callNanoBananaAPI(prompt, imageData) {
 
         if (!response.ok) {
             console.error('Nano Banana API error:', data);
-            throw new Error(`Nano Banana API Error: ${data.error?.message || response.statusText} `);
+            throw new Error(`Nano Banana API Error: ${data.error?.message || response.statusText}`);
         }
 
         // Extract the edited image from response
@@ -512,7 +510,7 @@ async function callNanoBananaAPI(prompt, imageData) {
 
                     if (inlineData && inlineData.data) {
                         const responseMime = inlineData.mimeType || inlineData.mime_type || 'image/png';
-                        return `data:${responseMime}; base64, ${inlineData.data} `;
+                        return `data:${responseMime};base64,${inlineData.data}`;
                     }
 
                     // Check if model returned text instead (error/refusal)
@@ -520,7 +518,7 @@ async function callNanoBananaAPI(prompt, imageData) {
                         console.warn('Model returned text instead of image:', part.text);
                         // If it's a refusal, throw it as an error
                         if (part.text.includes("cannot") || part.text.includes("sorry") || part.text.includes("apologize")) {
-                            throw new Error(`Model refused to edit image: ${part.text} `);
+                            throw new Error(`Model refused to edit image: ${part.text}`);
                         }
                     }
                 }
@@ -550,10 +548,10 @@ async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
             }
         };
 
-        console.log(`Calling Imagen API(${modelVersion}) with prompt: `, prompt.substring(0, 200) + '...');
+        console.log(`Calling Imagen API (${modelVersion}) with prompt:`, prompt.substring(0, 200) + '...');
 
         const response = await fetch(
-            `${CONFIG.IMAGEN_API_BASE} /models/${modelVersion}: predict`,
+            `${CONFIG.IMAGEN_API_BASE}/models/${modelVersion}:predict`,
             {
                 method: 'POST',
                 headers: {
@@ -576,7 +574,7 @@ async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
                 return await callImagenAPI(prompt, 'imagen-3.0-generate-001');
             }
 
-            throw new Error(`Imagen API Error: ${data.error?.message || response.statusText} `);
+            throw new Error(`Imagen API Error: ${data.error?.message || response.statusText}`);
         }
 
         // Extract the generated image from the response
@@ -586,9 +584,9 @@ async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
 
             // The image is in bytesBase64Encoded or mimeType + bytesBase64Encoded
             if (prediction.bytesBase64Encoded) {
-                return `data: image / png; base64, ${prediction.bytesBase64Encoded} `;
+                return `data:image/png;base64,${prediction.bytesBase64Encoded}`;
             } else if (prediction.image && prediction.image.bytesBase64Encoded) {
-                return `data: image / png; base64, ${prediction.image.bytesBase64Encoded} `;
+                return `data:image/png;base64,${prediction.image.bytesBase64Encoded}`;
             } else {
                 console.error('Unexpected response format:', prediction);
                 throw new Error('No image data in Imagen response - unexpected format');
@@ -598,7 +596,7 @@ async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
 
             // Check if it's an access/permission error
             if (data.error) {
-                throw new Error(`Imagen API Error: ${data.error.message || 'Unknown error'} `);
+                throw new Error(`Imagen API Error: ${data.error.message || 'Unknown error'}`);
             }
 
             throw new Error('No predictions in Imagen response - API may not be enabled for your account');
@@ -612,7 +610,7 @@ async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
 async function generateTopDownView(transformationDescription, originalImageData) {
     try {
         // Step 1: Analyze the property layout
-        const layoutPrompt = `Analyze this property image and describe the layout from a top - down perspective:
+        const layoutPrompt = `Analyze this property image and describe the layout from a top-down perspective:
 1. Property boundaries and dimensions
 2. Building footprint and structure
 3. Current landscape elements and their positions
@@ -623,19 +621,19 @@ async function generateTopDownView(transformationDescription, originalImageData)
         console.log('Layout analysis:', layoutAnalysis);
 
         // Step 2: Create prompt for top-down architectural view
-        const topDownPrompt = `Create a professional top - down architectural plan view of this property with the landscape transformation applied.
+        const topDownPrompt = `Create a professional top-down architectural plan view of this property with the landscape transformation applied.
 
-    REQUIREMENTS:
+REQUIREMENTS:
 - Bird's eye view / aerial perspective looking straight down
-    - Architectural style plan with clear boundaries
-        - Show building footprint, pathways, and all landscape elements
-            - Professional landscape architecture drawing style
-                - Include the transformation: ${transformationDescription}
+- Architectural style plan with clear boundaries
+- Show building footprint, pathways, and all landscape elements
+- Professional landscape architecture drawing style
+- Include the transformation: ${transformationDescription}
 
 PROPERTY LAYOUT:
 ${layoutAnalysis}
 
-Generate a clean, professional top - down architectural plan that shows the property layout with the new landscape design.Style should be like a landscape architect's plan view.`;
+Generate a clean, professional top-down architectural plan that shows the property layout with the new landscape design. Style should be like a landscape architect's plan view.`;
 
         console.log('Generating top-down view with Imagen 3...');
         const imageUrl = await callImagenAPI(topDownPrompt);
