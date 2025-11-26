@@ -35,7 +35,7 @@ The AI now maintains:
 ### Configuration Updates (`app.js`)
 ```javascript
 const CONFIG = {
-    GEMINI_API_KEY: 'AIzaSyCpRRzogVanNEg24qxizsljOxExfaEOrk0', // Your Pro API key
+    GEMINI_API_KEY: 'AIz', // Your Pro API key
     IMAGEN_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     IMAGE_MODEL: 'imagen-3.0-generate-001',
     // ... other config
