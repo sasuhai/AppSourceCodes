@@ -328,7 +328,25 @@ async function callGeminiAPI(prompt, imageData, model = null) {
         if (!response.ok) {
             const errorData = await response.json();
             console.error('Netlify Function error response:', errorData);
-            const errorMsg = errorData.error || errorData.details || errorData.message || response.statusText;
+
+            // Extract the actual error message
+            let errorMsg = 'Unknown error';
+            if (errorData.error) {
+                if (typeof errorData.error === 'string') {
+                    errorMsg = errorData.error;
+                } else if (errorData.error.message) {
+                    errorMsg = errorData.error.message;
+                } else {
+                    errorMsg = JSON.stringify(errorData.error);
+                }
+            } else if (errorData.details) {
+                errorMsg = errorData.details;
+            } else if (errorData.message) {
+                errorMsg = errorData.message;
+            } else {
+                errorMsg = response.statusText;
+            }
+
             throw new Error(`API Error: ${errorMsg}`);
         }
 
