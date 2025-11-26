@@ -2,7 +2,9 @@
 // CONFIGURATION
 // ===================================
 const CONFIG = {
-    GEMINI_API_KEY: 'AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo', // New key - set HTTP referrer restrictions!
+    // API key is now stored securely in Netlify environment variables
+    // All API calls go through Netlify Functions
+    NETLIFY_FUNCTION_URL: '/.netlify/functions/gemini-proxy',
     GEMINI_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     IMAGEN_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     DEFAULT_MODEL: 'gemini-2.0-flash-exp', // Latest Gemini 2.0 Flash
@@ -305,42 +307,23 @@ async function callGeminiAPI(prompt, imageData, model = null) {
     const selectedModel = model || CONFIG.MODELS[elements.modelSelect?.value || 'auto'];
 
     try {
-        // Convert base64 to proper format
-        const base64Data = imageData.split(',')[1];
-        const mimeType = imageData.split(',')[0].split(':')[1].split(';')[0];
-
-        const requestBody = {
-            contents: [{
-                parts: [
-                    {
-                        text: prompt
-                    },
-                    {
-                        inline_data: {
-                            mime_type: mimeType,
-                            data: base64Data
-                        }
-                    }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.8,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 8192,
-            }
-        };
-
-        const response = await fetch(
-            `${CONFIG.GEMINI_API_BASE}/models/${selectedModel}:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            }
-        );
+        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: selectedModel,
+                prompt: prompt,
+                imageData: imageData,
+                generationConfig: {
+                    temperature: 0.8,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: 8192,
+                }
+            })
+        });
 
         if (!response.ok) {
             const errorData = await response.json();
@@ -361,6 +344,7 @@ async function callGeminiAPI(prompt, imageData, model = null) {
         throw error;
     }
 }
+
 
 async function generateImageWithGemini(prompt, referenceImageData) {
     try {
@@ -395,117 +379,48 @@ async function generateImageWithGemini(prompt, referenceImageData) {
     }
 }
 
+
 async function callNanoBananaAPI(prompt, imageData) {
     try {
-        // Extract mime type and base64 data
-        const matches = imageData.match(/^data:(.+);base64,(.+)$/);
-        if (!matches) throw new Error('Invalid image data format');
+        console.log('Calling Netlify Function for image generation...');
 
-        const mimeType = matches[1];
-        const base64Data = matches[2];
-
-        console.log(`Preparing Nano Banana request with MIME type: ${mimeType}`);
-
-        const requestBody = {
-            contents: [{
-                parts: [
-                    {
-                        text: prompt
-                    },
-                    {
-                        inline_data: {
-                            mime_type: mimeType,
-                            data: base64Data
-                        }
-                    }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.4,
-                topK: 32,
-                topP: 1,
-                maxOutputTokens: 4096,
-            }
-        };
-
-        console.log('Calling Gemini 3.0 Pro Image API with image editing prompt...');
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 second timeout (3 mins)
-
-        let response;
-        let retries = 3;
-        let lastError;
-
-        while (retries > 0) {
-            try {
-                response = await fetch(
-                    `${CONFIG.GEMINI_API_BASE}/models/${CONFIG.IMAGE_MODEL}:generateContent`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'x-goog-api-key': CONFIG.GEMINI_API_KEY,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(requestBody),
-                        signal: controller.signal
-                    }
-                );
-
-                // If successful or client error (4xx), break loop
-                // Only retry on server errors (5xx)
-                if (response.ok || response.status < 500) {
-                    break;
+        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: CONFIG.IMAGE_MODEL,
+                prompt: prompt,
+                imageData: imageData,
+                generationConfig: {
+                    temperature: 0.4,
+                    topK: 32,
+                    topP: 1,
+                    maxOutputTokens: 4096,
                 }
+            })
+        });
 
-                throw new Error(`Server Error: ${response.status}`);
-
-            } catch (error) {
-                lastError = error;
-                if (error.name === 'AbortError') {
-                    throw new Error('Request timed out after 180 seconds');
-                }
-
-                console.warn(`API attempt failed. Retries left: ${retries - 1}. Error: ${error.message}`);
-                retries--;
-
-                if (retries > 0) {
-                    // Wait 2 seconds before retrying
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-            }
-        }
-
-        clearTimeout(timeoutId);
-
-        if (!response) {
-            throw lastError || new Error('Failed to connect to API');
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('Netlify Function error:', error);
+            throw new Error(error.error || JSON.stringify(error) || 'API request failed');
         }
 
         const data = await response.json();
-        console.log('Nano Banana API full response:', JSON.stringify(data, null, 2));
-
-        if (!response.ok) {
-            console.error('Nano Banana API error:', data);
-            throw new Error(`Nano Banana API Error: ${data.error?.message || response.statusText}`);
-        }
+        console.log('Image generation response received');
 
         // Extract the edited image from response
         if (data.candidates && data.candidates[0]) {
             const candidate = data.candidates[0];
 
-            // Check for safety finish reason
             if (candidate.finishReason && candidate.finishReason !== 'STOP') {
                 console.warn('Generation stopped due to:', candidate.finishReason);
-                if (candidate.safetyRatings) {
-                    console.warn('Safety ratings:', candidate.safetyRatings);
-                }
             }
 
-            // Look for inline_data (image)
             if (candidate.content && candidate.content.parts) {
                 for (const part of candidate.content.parts) {
-                    // Handle both camelCase (inlineData) and snake_case (inline_data)
                     const inlineData = part.inlineData || part.inline_data;
 
                     if (inlineData && inlineData.data) {
@@ -513,10 +428,8 @@ async function callNanoBananaAPI(prompt, imageData) {
                         return `data:${responseMime};base64,${inlineData.data}`;
                     }
 
-                    // Check if model returned text instead (error/refusal)
                     if (part.text) {
                         console.warn('Model returned text instead of image:', part.text);
-                        // If it's a refusal, throw it as an error
                         if (part.text.includes("cannot") || part.text.includes("sorry") || part.text.includes("apologize")) {
                             throw new Error(`Model refused to edit image: ${part.text}`);
                         }
@@ -525,12 +438,13 @@ async function callNanoBananaAPI(prompt, imageData) {
             }
         }
 
-        throw new Error('No edited image in Nano Banana response (check console for details)');
+        throw new Error('No edited image in response (check console for details)');
     } catch (error) {
-        console.error('Nano Banana API call failed:', error);
+        console.error('Image generation API call failed:', error);
         throw error;
     }
 }
+
 
 async function callImagenAPI(prompt, modelVersion = 'imagen-4.0-generate-001') {
     try {
@@ -690,30 +604,22 @@ async function callGeminiAPITextOnly(prompt) {
     const selectedModel = CONFIG.MODELS[elements.modelSelect?.value || 'auto'];
 
     try {
-        const requestBody = {
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }],
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 8192,
-            }
-        };
-
-        const response = await fetch(
-            `${CONFIG.GEMINI_API_BASE}/models/${selectedModel}:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            }
-        );
+        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: selectedModel,
+                prompt: prompt,
+                generationConfig: {
+                    temperature: 0.7,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: 8192,
+                }
+            })
+        });
 
         if (!response.ok) {
             const errorData = await response.json();
