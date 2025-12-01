@@ -50,6 +50,7 @@ const elements = {
 
     // Sections
     uploadSection: document.getElementById('uploadSection'),
+    modeSelection: document.getElementById('modeSelection'),
     optionsSection: document.getElementById('optionsSection'),
     loadingSection: document.getElementById('loadingSection'),
     resultsSection: document.getElementById('resultsSection'),
@@ -58,6 +59,7 @@ const elements = {
     promptInput: document.getElementById('promptInput'),
     autoFillBtn: document.getElementById('autoFillBtn'),
     modelSelect: document.getElementById('modelSelect'),
+    inventoryLanguage: document.getElementById('inventoryLanguage'),
     generateTopView: document.getElementById('generateTopView'),
     generateInventory: document.getElementById('generateInventory'),
     generateBtn: document.getElementById('generateBtn'),
@@ -244,7 +246,10 @@ async function handleFile(file) {
                 console.log('Image loaded successfully');
                 elements.uploadArea.style.display = 'none';
                 elements.imagePreview.style.display = 'block';
-                elements.optionsSection.style.display = 'flex';
+                elements.modeSelection.style.display = 'block';
+
+                // Set up mode change listener
+                setupModeListeners();
             };
 
             elements.previewImage.onerror = (err) => {
@@ -296,8 +301,152 @@ function removeImage() {
     elements.previewImage.src = '';
     elements.uploadArea.style.display = 'block';
     elements.imagePreview.style.display = 'none';
+    elements.modeSelection.style.display = 'none';
     elements.optionsSection.style.display = 'none';
     elements.fileInput.value = '';
+}
+
+// ===================================
+// MODE SELECTION
+// ===================================
+function setupModeListeners() {
+    const modeRadios = document.querySelectorAll('input[name="mode"]');
+
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const selectedMode = e.target.value;
+            handleModeChange(selectedMode);
+        });
+    });
+
+    // Trigger initial mode setup
+    const checkedMode = document.querySelector('input[name="mode"]:checked');
+    if (checkedMode) {
+        handleModeChange(checkedMode.value);
+    }
+}
+
+function handleModeChange(mode) {
+    console.log('Mode changed to:', mode);
+
+    if (mode === 'transform') {
+        // Show transform options
+        elements.optionsSection.style.display = 'flex';
+        elements.generateBtn.textContent = 'Create New Design';
+
+        // Show all transform-specific options
+        if (elements.promptInput) elements.promptInput.closest('.option-group').style.display = 'flex';
+        if (elements.generateTopView) elements.generateTopView.closest('.option-group').style.display = 'flex';
+        if (elements.generateInventory) elements.generateInventory.closest('.option-group').style.display = 'flex';
+
+    } else if (mode === 'analyze') {
+        // Show analyze options
+        elements.optionsSection.style.display = 'flex';
+        elements.generateBtn.textContent = 'Generate Infographic';
+
+        // Hide transform-specific options
+        if (elements.promptInput) elements.promptInput.closest('.option-group').style.display = 'none';
+        if (elements.generateTopView) elements.generateTopView.closest('.option-group').style.display = 'none';
+        if (elements.generateInventory) elements.generateInventory.closest('.option-group').style.display = 'none';
+    }
+}
+
+// ===================================
+// INFOGRAPHIC GENERATION
+// ===================================
+async function generateInfographic() {
+    const language = elements.inventoryLanguage?.value || 'english';
+
+    const languageInstructions = {
+        english: 'Respond in English only.',
+        malay: 'Respond in Bahasa Malaysia only.',
+        both: 'Provide bilingual response with both English and Bahasa Malaysia.'
+    };
+
+    const prompt = `Analyze this landscape/garden photo in detail and create a comprehensive infographic-style description.
+
+${languageInstructions[language]}
+
+Include the following sections:
+
+1. **Overview**: Brief description of the landscape type and style
+2. **Key Features**: List and describe the main elements (plants, structures, hardscape)
+3. **Plant Identification**: Identify visible plants and trees with names and characteristics
+4. **Design Elements**: Describe pathways, water features, lighting, etc.
+5. **Maintenance Level**: Estimate the maintenance requirements
+6. **Seasonal Considerations**: Note any seasonal aspects visible
+
+Format the response as a structured, detailed infographic with clear sections and bullet points.
+Use numbered markers where appropriate to reference specific elements in the image.`;
+
+    try {
+        const result = await callGeminiAPI(prompt, state.uploadedImageData);
+        return result;
+    } catch (error) {
+        console.error('Infographic generation failed:', error);
+        throw error;
+    }
+}
+
+async function generateInfographicMode() {
+    // Show loading
+    elements.optionsSection.style.display = 'none';
+    elements.loadingSection.style.display = 'block';
+
+    try {
+        // Generate infographic
+        updateProgress(20, 'Analyzing your landscape...');
+        await sleep(500);
+
+        updateProgress(60, 'Creating detailed infographic...');
+        const infographicText = await generateInfographic();
+
+        updateProgress(100, 'Complete!');
+        await sleep(500);
+
+        // Display results
+        elements.loadingSection.style.display = 'none';
+        elements.resultsSection.style.display = 'block';
+
+        // Show the original image as the "result"
+        elements.transformedImage.src = state.uploadedImageData;
+
+        // Hide top view section (not needed for infographic)
+        elements.topViewSection.style.display = 'none';
+
+        // Show infographic in inventory section
+        elements.inventorySection.style.display = 'block';
+        elements.inventoryContent.innerHTML = formatInfographic(infographicText);
+
+        // Scroll to results
+        elements.resultsSection.scrollIntoView({ behavior: 'smooth' });
+
+    } catch (error) {
+        console.error('Infographic generation error:', error);
+        alert(`Failed to generate infographic: ${error.message}`);
+
+        // Reset UI
+        elements.loadingSection.style.display = 'none';
+        elements.optionsSection.style.display = 'flex';
+    }
+}
+
+function formatInfographic(text) {
+    // Convert markdown-style formatting to HTML
+    let html = text;
+
+    // Convert headers
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/^(\d+)\.\s\*\*(.+?)\*\*:/gm, '<h4>$1. $2</h4>');
+
+    // Convert line breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+
+    // Wrap in paragraph
+    html = '<p>' + html + '</p>';
+
+    return html;
 }
 
 // ===================================
@@ -604,18 +753,39 @@ Generate a clean, professional top-down architectural plan that shows the proper
 }
 
 async function generateInventoryList(transformationDescription, transformedImageUrl) {
+    const language = elements.inventoryLanguage?.value || 'english';
     let prompt;
     let result;
+
+    // Language-specific instructions
+    const languageInstructions = {
+        english: {
+            instruction: 'Respond in English only.',
+            format: '1. **[Plant/Tree Name]**: [Short description]'
+        },
+        malay: {
+            instruction: 'Respond in Bahasa Malaysia only.',
+            format: '1. **[Nama Pokok/Tumbuhan]**: [Penerangan ringkas]'
+        },
+        both: {
+            instruction: 'Provide bilingual response. For each item, give both English and Bahasa Malaysia names and descriptions.',
+            format: '1. **[Plant Name] / [Nama Pokok]**: [Description] / [Penerangan]'
+        }
+    };
+
+    const langConfig = languageInstructions[language];
 
     if (transformedImageUrl) {
         // Multimodal: Look at the image and identify numbered items
         prompt = `Look at this landscape design image. Identify the numbered markers (1, 2, 3...) which mark the PLANTS and TREES.
         
+        ${langConfig.instruction}
+        
         Create a strictly formatted legend list focusing on the vegetation.
         DO NOT say "Okay" or "Here is the list". Start directly with the first item.
         
         Format exactly like this:
-        1. **[Plant/Tree Name]**: [Short description]
+        ${langConfig.format}
         2. **[Plant/Tree Name]**: [Short description]
         
         If there are numbered hardscape features, list them as well, but prioritize the plants.`;
@@ -627,10 +797,12 @@ async function generateInventoryList(transformationDescription, transformedImage
         prompt = `Based on this landscape transformation description: "${transformationDescription}", 
         create a simple list of plants and features.
         
+        ${langConfig.instruction}
+        
         DO NOT include any conversational text. Start directly with the list.
         
         Format:
-        1. **[Item Name]**: [Short description]
+        ${langConfig.format}
         2. **[Item Name]**: [Short description]`;
 
         result = await callGeminiAPITextOnly(prompt);
@@ -718,6 +890,16 @@ async function generateTransformation() {
         return;
     }
 
+    // Check which mode is selected
+    const selectedMode = document.querySelector('input[name="mode"]:checked')?.value || 'transform';
+
+    if (selectedMode === 'analyze') {
+        // Generate infographic
+        await generateInfographicMode();
+        return;
+    }
+
+    // Transform mode (existing functionality)
     const prompt = elements.promptInput.value.trim();
     if (!prompt) {
         alert('Please describe your desired transformation');
