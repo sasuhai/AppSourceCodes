@@ -1,22 +1,123 @@
 // ===================================
 // CONFIGURATION
 // ===================================
+
+// Check if local config exists (for development)
+const USE_LOCAL_CONFIG = window.LOCAL_CONFIG && window.LOCAL_CONFIG.USE_LOCAL_API_KEY;
+
 const CONFIG = {
-    // API key is now stored securely in Netlify environment variables
-    // All API calls go through Netlify Functions
+    // For local development: Use API key directly
+    // For production: Use Netlify Functions
+    GEMINI_API_KEY: USE_LOCAL_CONFIG ? window.LOCAL_CONFIG.GEMINI_API_KEY : null,
+    USE_DIRECT_API: USE_LOCAL_CONFIG,
     NETLIFY_FUNCTION_URL: '/.netlify/functions/gemini-proxy',
     GEMINI_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     IMAGEN_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
-    DEFAULT_MODEL: 'gemini-2.0-flash-exp', // Latest Gemini 2.0 Flash
-    IMAGE_MODEL: 'gemini-2.5-flash-image', // Gemini 2.5 Flash Image (Faster, confirmed working)
+    DEFAULT_MODEL: 'gemini-2.0-flash-exp', // Latest available Gemini 2.0 Flash (Confirmed working)
+    IMAGE_MODEL: 'gemini-2.0-flash-exp', // Latest available for image generation (Confirmed working)
     MODELS: {
-        'auto': 'gemini-2.0-flash-exp', // Auto-selects Gemini 2.0 Flash
-        'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp', // Gemini 2.0 Flash (Fastest, Latest)
+        'auto': 'gemini-2.0-flash-exp', // Auto-selects latest available Gemini 2.0 Flash
+        'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp', // Gemini 2.0 Flash Experimental (Latest available)
         'gemini-2.0-flash-thinking-exp': 'gemini-2.0-flash-thinking-exp-01-21', // Gemini 2.0 with advanced reasoning
+        'gemini-exp-1206': 'gemini-exp-1206', // Gemini 2.0 Experimental (December 2024)
         'gemini-1.5-pro': 'gemini-1.5-pro-latest', // Gemini 1.5 Pro (Stable)
         'gemini-1.5-flash': 'gemini-1.5-flash-latest' // Gemini 1.5 Flash (Stable)
     }
 };
+
+// Log configuration mode
+console.log(USE_LOCAL_CONFIG ? '🔧 Using LOCAL API key for development' : '🚀 Using Netlify Functions for production');
+
+// ===================================
+// AUTO-UPDATE TO LATEST MODELS
+// ===================================
+async function checkAndUpdateLatestModels() {
+    if (!CONFIG.USE_DIRECT_API || !CONFIG.GEMINI_API_KEY) {
+        console.log('⏭️ Skipping model check (using Netlify Functions)');
+        return;
+    }
+
+    try {
+        console.log('🔍 Checking for latest available models...');
+
+        const response = await fetch(
+            `${CONFIG.GEMINI_API_BASE}/models?key=${CONFIG.GEMINI_API_KEY}`
+        );
+
+        if (!response.ok) {
+            console.warn('⚠️ Could not fetch model list, using defaults');
+            return;
+        }
+
+        const data = await response.json();
+        const models = data.models || [];
+
+        console.log(`📋 Found ${models.length} total models`);
+
+        // Priority list of actual image generation models (from official docs)
+        const preferredImageModels = [
+            'gemini-3-pro-image-preview',           // Best: Gemini 3 Pro (20 RPM, best reasoning)
+            'imagen-3.0-generate-001',              // Best quality: Imagen 3 (20 RPM)
+            'gemini-2.0-flash-preview-image-generation', // Fastest: Gemini 2.0 Flash (10 RPM)
+            'gemini-2.5-flash-preview-image',       // Alternative
+            'gemini-2.5-flash-image'                // Fallback
+        ];
+
+        // Find the first available preferred model
+        let selectedImageModel = null;
+        for (const preferredModel of preferredImageModels) {
+            const found = models.find(m => m.name.includes(preferredModel));
+            if (found) {
+                selectedImageModel = found;
+                console.log(`✨ Found preferred image model: ${preferredModel}`);
+                break;
+            }
+        }
+
+        // Fallback: filter for any image generation models
+        if (!selectedImageModel) {
+            const imageModels = models.filter(m =>
+                m.supportedGenerationMethods?.includes('generateContent') &&
+                (m.name.includes('image') || m.name.includes('imagen')) &&
+                !m.name.includes('vision')
+            );
+            selectedImageModel = imageModels[0];
+        }
+
+        // Text models
+        const textModels = models.filter(m =>
+            m.supportedGenerationMethods?.includes('generateContent') &&
+            !m.name.includes('image') &&
+            !m.name.includes('imagen')
+        );
+
+        console.log(`🖼️ Image model selected: ${selectedImageModel?.name || 'none'}`);
+        console.log(`📝 Found ${textModels.length} text models`);
+
+        const latestTextModel = textModels.find(m => m.name.includes('2.0-flash-exp')) ||
+            textModels.find(m => m.name.includes('2.0')) ||
+            textModels.find(m => m.name.includes('1.5')) ||
+            textModels[0];
+
+        if (selectedImageModel) {
+            const modelName = selectedImageModel.name.replace('models/', '');
+            CONFIG.IMAGE_MODEL = modelName;
+            console.log('✅ Updated IMAGE_MODEL to:', modelName);
+        }
+
+        if (latestTextModel) {
+            const modelName = latestTextModel.name.replace('models/', '');
+            CONFIG.DEFAULT_MODEL = modelName;
+            CONFIG.MODELS['auto'] = modelName;
+            console.log('✅ Updated DEFAULT_MODEL to:', modelName);
+        }
+
+        console.log('🎉 Using latest available models!');
+
+    } catch (error) {
+        console.warn('⚠️ Error checking models, using defaults:', error.message);
+    }
+}
 
 // ===================================
 // STATE MANAGEMENT
@@ -27,7 +128,8 @@ const state = {
     transformedImage: null,
     topViewImage: null,
     inventory: null,
-    currentModel: 'auto'
+    currentModel: 'auto',
+    isRemovingImage: false
 };
 
 // ===================================
@@ -91,6 +193,9 @@ function init() {
     if (elements.loadingSection) elements.loadingSection.style.display = 'none';
     if (elements.resultsSection) elements.resultsSection.style.display = 'none';
 
+    // Check for latest models
+    checkAndUpdateLatestModels();
+
     setupEventListeners();
     loadHeroImage();
     setupSmoothScroll();
@@ -125,6 +230,14 @@ function setupEventListeners() {
     elements.downloadReportBtn?.addEventListener('click', downloadFullReport);
     elements.shareBtn?.addEventListener('click', shareResults);
 
+    // Error Modal
+    document.getElementById('errorModalClose')?.addEventListener('click', closeErrorModal);
+    document.getElementById('errorModal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'errorModal' || e.target.classList.contains('error-modal-overlay')) {
+            closeErrorModal();
+        }
+    });
+
     // Slider removed - now using simple image display
 
     // Close mobile menu when clicking links
@@ -156,6 +269,43 @@ function setupSmoothScroll() {
 function toggleMobileMenu() {
     elements.mobileMenu?.classList.toggle('active');
 }
+
+// ===================================
+// ERROR MODAL
+// ===================================
+function showErrorModal(title, message) {
+    const modal = document.getElementById('errorModal');
+    const modalTitle = document.getElementById('errorModalTitle');
+    const modalBody = document.getElementById('errorModalBody');
+
+
+    if (modal && modalTitle && modalBody) {
+        modalTitle.textContent = title;
+        modalBody.textContent = message;
+        modal.style.display = 'flex';
+
+        // Prevent body scroll when modal is open
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeErrorModal() {
+    const modal = document.getElementById('errorModal');
+    if (modal) {
+        modal.style.display = 'none';
+
+        // Restore body scroll
+        document.body.style.overflow = '';
+    }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeErrorModal();
+    }
+});
+
 
 // ===================================
 // HERO IMAGE
@@ -206,11 +356,117 @@ async function handleFile(file) {
         return;
     }
 
-    // Check for HEIC/HEIF format (not supported in browsers)
+    // Check for HEIC/HEIF format and convert to JPG
     if (file.type === 'image/heic' || file.type === 'image/heif' ||
         file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
-        alert('HEIC/HEIF format is not supported in web browsers.\n\nPlease convert your image to JPG or PNG format first.\n\nOn iPhone: Go to Settings > Camera > Formats and select "Most Compatible" to save photos as JPG.\n\nOr use an online converter to convert HEIC to JPG.');
-        return;
+
+        console.log('HEIC/HEIF file detected, converting to JPG...');
+
+        // Check if heic2any library is available
+        if (typeof heic2any === 'undefined') {
+            console.error('heic2any library not loaded');
+            showErrorModal(
+                'HEIC Converter Not Available',
+                'The HEIC converter library failed to load. Please try uploading a JPG or PNG image instead.\n\nOn iPhone: Go to Settings > Camera > Formats and select "Most Compatible" to save photos as JPG.'
+            );
+            return;
+        }
+
+        try {
+            // Show a brief loading message
+            const uploadArea = elements.uploadArea;
+            const originalHTML = uploadArea.innerHTML;
+            uploadArea.innerHTML = `
+                <div class="upload-content">
+                    <div class="loading-spinner" style="margin: 0 auto 1rem;"></div>
+                    <h3 class="upload-title">Converting HEIC to JPG...</h3>
+                    <p class="upload-hint">Please wait a moment</p>
+                </div>
+            `;
+
+            console.log('Starting HEIC conversion, file size:', file.size);
+
+            // Convert HEIC to JPG using heic2any
+            let convertedBlob = await heic2any({
+                blob: file,
+                toType: 'image/jpeg',
+                quality: 0.9
+            });
+
+            // heic2any might return an array of blobs, take the first one
+            if (Array.isArray(convertedBlob)) {
+                console.log('heic2any returned array, taking first blob');
+                convertedBlob = convertedBlob[0];
+            }
+
+            console.log('Conversion complete, blob size:', convertedBlob.size);
+
+            // Create a new File object from the converted blob
+            const convertedFile = new File(
+                [convertedBlob],
+                file.name.replace(/\.(heic|heif)$/i, '.jpg'),
+                { type: 'image/jpeg' }
+            );
+
+            console.log('✅ HEIC conversion successful, new file:', convertedFile.name);
+
+            // Restore original upload area
+            uploadArea.innerHTML = originalHTML;
+
+            // Continue processing with the converted file
+            file = convertedFile;
+
+        } catch (error) {
+            console.error('HEIC conversion error:', error);
+            console.error('Error details:', error.message, error.code);
+
+            let errorMessage = '⚠️ Unable to convert this HEIC file\n\n';
+
+            // Provide specific error messages based on error type
+            if (error.code === 2 || (error.message && error.message.includes('format not supported'))) {
+                errorMessage += 'This HEIC file uses a newer format that cannot be converted in the browser.\n\n';
+                errorMessage += '📱 For iPhone users - Change your camera settings:\n';
+                errorMessage += '1. Open Settings app\n';
+                errorMessage += '2. Go to Camera → Formats\n';
+                errorMessage += '3. Select "Most Compatible"\n';
+                errorMessage += '4. Take a new photo and upload again\n\n';
+                errorMessage += '💡 Or convert this file using:\n';
+                errorMessage += '• AirDrop to Mac and convert\n';
+                errorMessage += '• Use an online HEIC to JPG converter\n';
+                errorMessage += '• Share via Messages (auto-converts to JPG)';
+            } else if (error.message && error.message.includes('parse')) {
+                errorMessage += 'The file appears to be corrupted or in an unsupported format.\n\n';
+                errorMessage += 'Please try:\n';
+                errorMessage += '1. Taking a new photo\n';
+                errorMessage += '2. Converting to JPG using another app\n';
+                errorMessage += '3. Changing iPhone camera settings to "Most Compatible"';
+            } else {
+                errorMessage += 'Please convert your image to JPG or PNG format.\n\n';
+                errorMessage += 'iPhone users: Settings → Camera → Formats → "Most Compatible"';
+            }
+
+            // Show error modal instead of alert
+            showErrorModal('Unable to Convert HEIC File', errorMessage);
+
+            // Restore original upload area
+            const uploadArea = elements.uploadArea;
+            uploadArea.innerHTML = `
+                <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,.heic,.heif" hidden>
+                <div class="upload-content">
+                    <div class="upload-icon">
+                        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                            <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4" />
+                            <path d="M32 20V44M20 32H44" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+                        </svg>
+                    </div>
+                    <h3 class="upload-title">Drop your image here or click to browse</h3>
+                    <p class="upload-hint">Supports: JPG, PNG, WebP, HEIC (Max 10MB)</p>
+                </div>
+            `;
+            // Re-attach event listeners
+            setupEventListeners();
+            return;
+        }
     }
 
     // Validate file size
@@ -253,8 +509,11 @@ async function handleFile(file) {
             };
 
             elements.previewImage.onerror = (err) => {
-                console.error('Image failed to load:', err);
-                alert('Failed to load image preview. Please try another image.');
+                // Only show error if this is not an intentional image removal
+                if (!state.isRemovingImage) {
+                    console.error('Image failed to load:', err);
+                    alert('Failed to load image preview. Please try a different image.');
+                }
             };
         } else {
             console.error('Preview image element not found!');
@@ -296,6 +555,9 @@ function resizeImage(base64Str, maxWidth = 1536, quality = 0.8) {
 }
 
 function removeImage() {
+    // Set flag to prevent error message when clearing the image
+    state.isRemovingImage = true;
+
     state.uploadedImage = null;
     state.uploadedImageData = null;
     elements.previewImage.src = '';
@@ -304,6 +566,11 @@ function removeImage() {
     elements.modeSelection.style.display = 'none';
     elements.optionsSection.style.display = 'none';
     elements.fileInput.value = '';
+
+    // Reset flag after a short delay
+    setTimeout(() => {
+        state.isRemovingImage = false;
+    }, 100);
 }
 
 // ===================================
@@ -358,68 +625,118 @@ async function generateInfographic() {
     const language = elements.inventoryLanguage?.value || 'english';
 
     const languageInstructions = {
-        english: 'Respond in English only.',
-        malay: 'Respond in Bahasa Malaysia only.',
-        both: 'Provide bilingual response with both English and Bahasa Malaysia.'
+        english: 'Label all plants and trees with their common English names only.',
+        malay: 'Label all plants and trees with their Bahasa Malaysia names only.',
+        both: 'Label all plants and trees bilingually. Format each label with the English name in regular font on the first line, and the Bahasa Malaysia name in smaller italic font in parentheses on the second line.'
     };
 
-    const prompt = `Analyze this landscape/garden photo in detail and create a comprehensive infographic-style description.
+    const prompt = `Transform this garden/landscape photo into a simplified illustrated infographic with plant labels.
 
 ${languageInstructions[language]}
 
-Include the following sections:
+STYLE REQUIREMENTS:
+1. Convert to a clean, simplified illustration style (NOT realistic photo)
+2. Use MUTED, NATURAL COLORS - avoid bright or oversaturated colors
+3. Use soft, natural tones for plants (muted greens, soft pinks, gentle purples, natural browns)
+4. Simplify shapes while keeping them recognizable
+5. Maintain the overall composition and layout of the original scene
 
-1. **Overview**: Brief description of the landscape type and style
-2. **Key Features**: List and describe the main elements (plants, structures, hardscape)
-3. **Plant Identification**: Identify visible plants and trees with names and characteristics
-4. **Design Elements**: Describe pathways, water features, lighting, etc.
-5. **Maintenance Level**: Estimate the maintenance requirements
-6. **Seasonal Considerations**: Note any seasonal aspects visible
+LABELING REQUIREMENTS:
+1. Identify all visible plants, trees, flowers, and landscape features
+2. Add WHITE RECTANGULAR LABEL BOXES with black text
+3. Use ARROWS or lines connecting each label to its corresponding plant/feature
+4. For bilingual labels:
+   - First line: English name in regular font
+   - Second line: (Bahasa Malaysia name) in smaller italic font within parentheses
+   - Example:
+     "Red Maple Tree"
+     "(Acer rubrum)"
+5. Position labels strategically around the image to avoid overlapping
+6. Ensure labels are clearly readable with good contrast
 
-Format the response as a structured, detailed infographic with clear sections and bullet points.
-Use numbered markers where appropriate to reference specific elements in the image.`;
+COLOR PALETTE:
+- Greens: Muted, natural green tones (not bright lime or neon)
+- Flowers: Soft, pastel colors (gentle pinks, purples, blues)
+- Trees: Natural browns and muted greens
+- Overall: Calm, natural, professional landscape illustration aesthetic
+
+The final result should look like a professional landscape plan illustration with a calm, natural color palette and all plants clearly labeled with white boxes and arrows.`;
+
+    console.log('📝 Generating illustrated infographic with language:', language);
+    console.log('🖼️ Image data length:', state.uploadedImageData?.length);
 
     try {
-        const result = await callGeminiAPI(prompt, state.uploadedImageData);
+        console.log('🚀 Calling Gemini API for illustrated infographic...');
+        const result = await callNanoBananaAPI(prompt, state.uploadedImageData);
+        console.log('✅ Illustrated infographic generated');
         return result;
     } catch (error) {
-        console.error('Infographic generation failed:', error);
+        console.error('❌ Infographic generation failed:', error);
         throw error;
     }
 }
 
 async function generateInfographicMode() {
+    console.log('🔍 Starting infographic generation...');
+
     // Show loading
     elements.optionsSection.style.display = 'none';
     elements.loadingSection.style.display = 'block';
 
     try {
         // Generate infographic
-        updateProgress(20, 'Analyzing your landscape...');
+        updateProgress(20, `Analyzing your landscape with ${CONFIG.IMAGE_MODEL}...`);
         await sleep(500);
 
-        updateProgress(60, 'Creating detailed infographic...');
-        const infographicText = await generateInfographic();
+        console.log('📊 Calling generateInfographic...');
+        updateProgress(60, `Creating annotated drawing with ${CONFIG.IMAGE_MODEL}...`);
+        const annotatedImageUrl = await generateInfographic();
+        console.log('✅ Annotated image generated');
 
         updateProgress(100, 'Complete!');
         await sleep(500);
 
+        console.log('📺 Displaying results...');
+
         // Display results
         elements.loadingSection.style.display = 'none';
         elements.resultsSection.style.display = 'block';
+        console.log('Results section shown');
 
-        // Show the original image as the "result"
-        elements.transformedImage.src = state.uploadedImageData;
+        // Get or create results list
+        const resultsList = document.getElementById('resultsList');
+        if (!resultsList) {
+            console.error('❌ resultsList not found!');
+            throw new Error('Results container not found');
+        }
 
-        // Hide top view section (not needed for infographic)
-        elements.topViewSection.style.display = 'none';
+        // Clear previous results
+        resultsList.innerHTML = '';
 
-        // Show infographic in inventory section
-        elements.inventorySection.style.display = 'block';
-        elements.inventoryContent.innerHTML = formatInfographic(infographicText);
+        // Create result card with both original and annotated images
+        const resultCard = document.createElement('div');
+        resultCard.className = 'result-item';
+        resultCard.innerHTML = `
+            <div style="margin-bottom: 2.5rem;">
+                <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-dark); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--color-gray-light);">Original Landscape Photo</h3>
+                <div class="result-image-container" style="width: 100%; max-width: 100%; margin-top: 1rem;">
+                    <img src="${state.uploadedImageData}" alt="Original Landscape" class="result-image" style="width: 100%; height: auto; display: block; border-radius: 0.5rem;">
+                </div>
+            </div>
+            <div style="margin-top: 2.5rem;">
+                <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-dark); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--color-gray-light);">Annotated Landscape Infographic</h3>
+                <div class="result-image-container" style="width: 100%; max-width: 100%; margin-top: 1rem;">
+                    <img src="${annotatedImageUrl}" alt="Annotated Landscape with Plant Labels" class="result-image" style="width: 100%; height: auto; display: block; border-radius: 0.5rem;">
+                </div>
+            </div>
+        `;
+
+        resultsList.appendChild(resultCard);
+        console.log('✅ Original and annotated infographic displayed');
 
         // Scroll to results
         elements.resultsSection.scrollIntoView({ behavior: 'smooth' });
+        console.log('✅ Scrolled to results');
 
     } catch (error) {
         console.error('Infographic generation error:', error);
@@ -432,20 +749,33 @@ async function generateInfographicMode() {
 }
 
 function formatInfographic(text) {
+    console.log('Formatting infographic, text length:', text?.length);
+
+    if (!text) {
+        console.error('No text to format!');
+        return '<p>No infographic data received.</p>';
+    }
+
     // Convert markdown-style formatting to HTML
     let html = text;
 
-    // Convert headers
+    // Convert bold text
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // Convert italic text (single asterisks, but not part of bold)
+    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+
+    // Convert numbered headers
     html = html.replace(/^(\d+)\.\s\*\*(.+?)\*\*:/gm, '<h4>$1. $2</h4>');
 
     // Convert line breaks
     html = html.replace(/\n\n/g, '</p><p>');
     html = html.replace(/\n/g, '<br>');
 
-    // Wrap in paragraph
-    html = '<p>' + html + '</p>';
+    // Wrap in div with styling
+    html = '<div class="infographic-content">' + html + '</div>';
 
+    console.log('Formatted HTML length:', html.length);
     return html;
 }
 
@@ -456,23 +786,62 @@ async function callGeminiAPI(prompt, imageData, model = null) {
     const selectedModel = model || CONFIG.MODELS[elements.modelSelect?.value || 'auto'];
 
     try {
-        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: selectedModel,
-                prompt: prompt,
-                imageData: imageData,
-                generationConfig: {
-                    temperature: 0.8,
-                    topK: 40,
-                    topP: 0.95,
-                    maxOutputTokens: 8192,
+        let response;
+
+        if (CONFIG.USE_DIRECT_API && CONFIG.GEMINI_API_KEY) {
+            // Local development: Call Google API directly
+            const base64Data = imageData.split(',')[1];
+            const mimeType = imageData.split(',')[0].split(':')[1].split(';')[0];
+
+            response = await fetch(
+                `${CONFIG.GEMINI_API_BASE}/models/${selectedModel}:generateContent`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'x-goog-api-key': CONFIG.GEMINI_API_KEY,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inline_data: {
+                                        mime_type: mimeType,
+                                        data: base64Data
+                                    }
+                                }
+                            ]
+                        }],
+                        generationConfig: {
+                            temperature: 0.8,
+                            topK: 40,
+                            topP: 0.95,
+                            maxOutputTokens: 8192,
+                        }
+                    })
                 }
-            })
-        });
+            );
+        } else {
+            // Production: Use Netlify Function
+            response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    prompt: prompt,
+                    imageData: imageData,
+                    generationConfig: {
+                        temperature: 0.8,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 8192,
+                    }
+                })
+            });
+        }
 
         if (!response.ok) {
             const errorData = await response.json();
@@ -551,25 +920,66 @@ async function generateImageWithGemini(prompt, referenceImageData) {
 
 async function callNanoBananaAPI(prompt, imageData) {
     try {
-        console.log('Calling Netlify Function for image generation...');
+        let response;
 
-        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: CONFIG.IMAGE_MODEL,
-                prompt: prompt,
-                imageData: imageData,
-                generationConfig: {
-                    temperature: 0.4,
-                    topK: 32,
-                    topP: 1,
-                    maxOutputTokens: 4096,
+        if (CONFIG.USE_DIRECT_API && CONFIG.GEMINI_API_KEY) {
+            // Local development: Call Google API directly
+            console.log('Calling Google API directly for image generation...');
+
+            const base64Data = imageData.split(',')[1];
+            const mimeType = imageData.split(',')[0].split(':')[1].split(';')[0];
+
+            response = await fetch(
+                `${CONFIG.GEMINI_API_BASE}/models/${CONFIG.IMAGE_MODEL}:generateContent`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'x-goog-api-key': CONFIG.GEMINI_API_KEY,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inline_data: {
+                                        mime_type: mimeType,
+                                        data: base64Data
+                                    }
+                                }
+                            ]
+                        }],
+                        generationConfig: {
+                            temperature: 0.4,
+                            topK: 32,
+                            topP: 1,
+                            maxOutputTokens: 4096,
+                        }
+                    })
                 }
-            })
-        });
+            );
+        } else {
+            // Production: Use Netlify Function
+            console.log('Calling Netlify Function for image generation...');
+
+            response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: CONFIG.IMAGE_MODEL,
+                    prompt: prompt,
+                    imageData: imageData,
+                    generationConfig: {
+                        temperature: 0.4,
+                        topK: 32,
+                        topP: 1,
+                        maxOutputTokens: 4096,
+                    }
+                })
+            });
+        }
 
         if (!response.ok) {
             const error = await response.json();
@@ -768,8 +1178,8 @@ async function generateInventoryList(transformationDescription, transformedImage
             format: '1. **[Nama Pokok/Tumbuhan]**: [Penerangan ringkas]'
         },
         both: {
-            instruction: 'Provide bilingual response. For each item, give both English and Bahasa Malaysia names and descriptions.',
-            format: '1. **[Plant Name] / [Nama Pokok]**: [Description] / [Penerangan]'
+            instruction: 'Provide bilingual response. For each item, give both English and Bahasa Malaysia names and descriptions. Use italic formatting (*text*) for all Bahasa Malaysia text.',
+            format: '1. **[Plant Name] / *[Nama Pokok]***: [Description] / *[Penerangan]*'
         }
     };
 
@@ -815,22 +1225,50 @@ async function callGeminiAPITextOnly(prompt) {
     const selectedModel = CONFIG.MODELS[elements.modelSelect?.value || 'auto'];
 
     try {
-        const response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: selectedModel,
-                prompt: prompt,
-                generationConfig: {
-                    temperature: 0.7,
-                    topK: 40,
-                    topP: 0.95,
-                    maxOutputTokens: 8192,
+        let response;
+
+        if (CONFIG.USE_DIRECT_API && CONFIG.GEMINI_API_KEY) {
+            // Local development: Call Google API directly
+            response = await fetch(
+                `${CONFIG.GEMINI_API_BASE}/models/${selectedModel}:generateContent`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'x-goog-api-key': CONFIG.GEMINI_API_KEY,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: prompt }]
+                        }],
+                        generationConfig: {
+                            temperature: 0.7,
+                            topK: 40,
+                            topP: 0.95,
+                            maxOutputTokens: 8192,
+                        }
+                    })
                 }
-            })
-        });
+            );
+        } else {
+            // Production: Use Netlify Function
+            response = await fetch(CONFIG.NETLIFY_FUNCTION_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    prompt: prompt,
+                    generationConfig: {
+                        temperature: 0.7,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 8192,
+                    }
+                })
+            });
+        }
 
         if (!response.ok) {
             const errorData = await response.json();
@@ -912,17 +1350,17 @@ async function generateTransformation() {
 
     try {
         // Step 1: Generate transformation (40%)
-        updateProgress(10, 'Analyzing your property...');
+        updateProgress(10, `Analyzing your property with ${CONFIG.IMAGE_MODEL}...`);
         await sleep(500);
 
-        updateProgress(40, 'Creating your dream landscape...');
+        updateProgress(40, `Creating your dream landscape with ${CONFIG.IMAGE_MODEL}...`);
         const transformedImageUrl = await generateImageWithGemini(prompt, state.uploadedImageData);
         state.transformedImage = transformedImageUrl;
 
         // Step 2: Generate inventory if requested (90%)
         let inventory = null;
         if (elements.generateInventory.checked) {
-            updateProgress(90, 'Creating smart inventory...');
+            updateProgress(90, `Creating smart inventory with ${CONFIG.DEFAULT_MODEL}...`);
             // Pass the transformed image to generate inventory legend
             inventory = await generateInventoryList(prompt, transformedImageUrl);
             state.inventory = inventory;

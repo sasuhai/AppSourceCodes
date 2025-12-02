@@ -17,6 +17,13 @@
 
     <!-- Stylesheet -->
     <link rel="stylesheet" href="index.css">
+
+    <!-- Local Config (for development only - ignored by Git) -->
+    <script src="config.local.js"></script>
+
+    <!-- HEIC to JPG Converter (Local file for reliability) -->
+    <script src="heic2any.min.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 
@@ -51,6 +58,10 @@
                     <span></span>
                     <span></span>
                 </button>
+            </div>
+            <!-- Designer Credit -->
+            <div style="text-align: right; padding: 0.25rem 0; font-size: 0.875rem; color: #6b7280;">
+                @ Designed by Idiahus
             </div>
         </div>
     </nav>
@@ -307,7 +318,8 @@
                 <!-- Upload Section -->
                 <div class="upload-section" id="uploadSection">
                     <div class="upload-area" id="uploadArea">
-                        <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png,image/webp" hidden>
+                        <input type="file" id="fileInput"
+                            accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,.heic,.heif" hidden>
                         <div class="upload-content">
                             <div class="upload-icon">
                                 <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -318,7 +330,7 @@
                                 </svg>
                             </div>
                             <h3 class="upload-title">Drop your image here or click to browse</h3>
-                            <p class="upload-hint">Supports: JPG, PNG, WebP (Max 10MB)</p>
+                            <p class="upload-hint">Supports: JPG, PNG, WebP, HEIC (Max 10MB)</p>
                         </div>
                     </div>
 
@@ -461,8 +473,24 @@
                 </div>
             </div>
         </div>
-        </div>
     </section>
+
+    <!-- Error Modal -->
+    <div id="errorModal" class="error-modal" style="display: none;">
+        <div class="error-modal-overlay"></div>
+        <div class="error-modal-content">
+            <div class="error-modal-header">
+                <div class="error-modal-icon">⚠️</div>
+                <h3 class="error-modal-title" id="errorModalTitle">Error</h3>
+            </div>
+            <div class="error-modal-body" id="errorModalBody">
+                <!-- Error message will be inserted here -->
+            </div>
+            <div class="error-modal-footer">
+                <button class="btn-primary" id="errorModalClose">Got it</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer class="footer">
