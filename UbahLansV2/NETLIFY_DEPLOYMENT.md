@@ -207,7 +207,7 @@ async function callGeminiAPI(prompt, imageData, model = null) {
 ```javascript
 const CONFIG = {
     // REMOVE THIS LINE:
-    // GEMINI_API_KEY: 'AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo',
+    // GEMINI_API_KEY: 'YOUR_GEMINI_API_KEY',
     
     GEMINI_API_BASE: 'https://generativelanguage.googleapis.com/v1beta',
     IMAGE_MODEL: 'gemini-2.5-flash-image',
@@ -241,7 +241,7 @@ const CONFIG = {
 
 4. **Set environment variable:**
    ```bash
-   netlify env:set GEMINI_API_KEY "AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo"
+   netlify env:set GEMINI_API_KEY "YOUR_GEMINI_API_KEY"
    ```
 
 5. **Deploy:**
@@ -273,7 +273,7 @@ const CONFIG = {
    - Go to "Site settings" → "Environment variables"
    - Click "Add a variable"
    - Key: `GEMINI_API_KEY`
-   - Value: `AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo`
+   - Value: `YOUR_GEMINI_API_KEY`
    - Click "Save"
 
 5. **Deploy:**

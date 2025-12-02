@@ -39,7 +39,7 @@ You need to update `app.js` to call the Netlify Function instead of Google direc
 
 7. **Add environment variable:**
    - Site settings → Environment variables
-   - Add: `GEMINI_API_KEY` = `AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo`
+   - Add: `GEMINI_API_KEY` = `xxx`
    - Redeploy site
 
 **Option B: Via Netlify CLI**
@@ -53,7 +53,7 @@ netlify login
 
 # Deploy
 netlify init
-netlify env:set GEMINI_API_KEY "AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo"
+netlify env:set GEMINI_API_KEY "YOUR_GEMINI_API_KEY"
 netlify deploy --prod
 ```
 

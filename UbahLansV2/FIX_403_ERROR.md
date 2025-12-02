@@ -15,7 +15,7 @@ Google API is blocking the request from Netlify servers due to **API key restric
 ### **Option 1: Remove Restrictions Temporarily (For Testing)**
 
 1. Go to: https://console.cloud.google.com/apis/credentials
-2. Click your API key: `AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo`
+2. Click your API key: `YOUR_GEMINI_API_KEY`
 3. Under **"Application restrictions"**:
    - Select: **"None"**
 4. Click: **"Save"**

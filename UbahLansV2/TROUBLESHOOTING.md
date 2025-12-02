@@ -21,7 +21,7 @@ Error: API Error:
 4. Click: **"Add a variable"**
 5. Enter:
    - **Key**: `GEMINI_API_KEY`
-   - **Value**: `AIzaSyAHxQOaNij1ztQFjFu1kstpzqwc0fTbBCo`
+   - **Value**: `YOUR_GEMINI_API_KEY`
    - **Scopes**: Select "All scopes" or "Production"
 6. Click: **"Create variable"**
 
